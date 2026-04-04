@@ -12,7 +12,6 @@ import (
 type aiRequest struct {
 	Message   string `json:"message"`
 	SessionID string `json:"session_id"`
-	UserType  string `json:"user_type"`
 }
 
 type aiResponse struct {
@@ -24,8 +23,7 @@ func callPythonAI(message string, sessionID string) (string, error) {
 
 	payload := aiRequest{
 		Message:   message,
-		SessionID: sessionID,
-		UserType:  "therapist",
+		SessionID: sessionID, // ← already there ✅
 	}
 
 	body, _ := json.Marshal(payload)
