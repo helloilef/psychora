@@ -27,19 +27,26 @@ type Message struct {
 
 // Request/Response structs
 type SignupRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	FullName string `json:"full_name" binding:"required"`
+	FullName          string `json:"fullName" binding:"required"`
+	Email             string `json:"email" binding:"required,email"`
+	Password          string `json:"password" binding:"required,min=6"`
+	Role              string `json:"role"`
+	Specialty         string `json:"specialty"`
+	IdCard            string `json:"idCard"`
+	Hospital          string `json:"hospital"`
+	Location          string `json:"location"`
+	Phone             string `json:"phone"`
+	YearsOfExperience int    `json:"yearsOfExperience"`
+}
+
+type AuthResponse struct {
+	AccessToken string `json:"accessToken"` // must be "accessToken" not "token"
+	User        User   `json:"user"`
 }
 
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
-}
-
-type AuthResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
 }
 
 type SendMessageRequest struct {
