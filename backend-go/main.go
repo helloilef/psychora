@@ -57,13 +57,21 @@ func main() {
 	}
 
 	// Protected routes
-	protected := r.Group("/api")
+	protected := r.Group("/api/psy")
 	protected.Use(middleware.AuthMiddleware())
 	{
-		protected.POST("/conversations", h.CreateConversation)
-		protected.GET("/conversations", h.GetConversations)
-		protected.POST("/conversations/:id/messages", h.SendMessage)
-		protected.GET("/conversations/:id/messages", h.GetMessages)
+		protected.GET("/conversations/:patientId", h.LoadConversation)
+		protected.POST("/conversations", h.SaveConversation)
+		protected.DELETE("/conversations/:patientId", h.ClearConversation)
+		/*protected.POST("/conversations/:id/messages", h.SendMessage)
+		protected.GET("/conversations/:id/messages", h.GetMessages)*/
+		protected.GET("/patients", h.GetPatients)
+		protected.GET("/users/me", h.GetCurrentUser)
+		protected.GET("/patients/:id", h.GetPatient)
+		protected.POST("/patients", h.CreatePatient)
+		protected.PUT("/patients/:id", h.UpdatePatient)
+		protected.DELETE("/patients/:id", h.DeletePatient)
+		protected.PUT("/users/me", h.UpdateCurrentUser)
 	}
 
 	port := os.Getenv("PORT")

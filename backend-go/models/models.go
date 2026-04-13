@@ -3,26 +3,31 @@ package models
 import "time"
 
 type User struct {
-	ID           string    `json:"id" db:"id"`
-	Email        string    `json:"email" db:"email"`
-	PasswordHash string    `json:"-" db:"password_hash"`
-	FullName     string    `json:"full_name" db:"full_name"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID                string    `json:"id" db:"id"`
+	Email             string    `json:"email" db:"email"`
+	PasswordHash      string    `json:"-" db:"password_hash"`
+	FullName          string    `json:"full_name" db:"full_name"`
+	Specialty         string    `json:"specialty" db:"specialty"`
+	IdCard            string    `json:"idCard" db:"id_card"`
+	Hospital          string    `json:"hospital" db:"hospital"`
+	Location          string    `json:"location" db:"location"`
+	Phone             string    `json:"phone" db:"phone"`
+	YearsOfExperience int       `json:"years_of_experience" db:"years_of_experience"`
+	CreatedAt         time.Time `json:"created_at" db:"created_at"`
+	Bio               string    `json:"bio" db:"bio"`
 }
 
 type Conversation struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`
+	PatientID string    `json:"patient_id" db:"patient_id"`
 	Title     string    `json:"title" db:"title"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
-type Message struct {
-	ID             string    `json:"id" db:"id"`
-	ConversationID string    `json:"conversation_id" db:"conversation_id"`
-	Role           string    `json:"role" db:"role"`
-	Content        string    `json:"content" db:"content"`
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+type CreateConversationRequest struct {
+	PatientID string `json:"patient_id" binding:"required"`
+	Title     string `json:"title"`
 }
 
 // Request/Response structs
@@ -49,11 +54,36 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-type SendMessageRequest struct {
-	Content string `json:"content" binding:"required"`
+// Add this to models/models.go
+
+type Patient struct {
+	ID            string    `json:"id" db:"id"`
+	UserID        string    `json:"user_id" db:"user_id"`
+	Name          string    `json:"name" db:"name"`
+	Age           int       `json:"age" db:"age"`
+	Condition     string    `json:"condition" db:"condition"`
+	LastSeen      string    `json:"lastSeen" db:"last_seen"`
+	SessionsCount int       `json:"sessionsCount" db:"sessions_count"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }
 
-type ChatResponse struct {
-	UserMessage      Message `json:"user_message"`
-	AssistantMessage Message `json:"assistant_message"`
+type CreatePatientRequest struct {
+	Name          string `json:"name" binding:"required"`
+	Age           int    `json:"age"`
+	Condition     string `json:"condition"`
+	LastSeen      string `json:"lastSeen"`
+	SessionsCount int    `json:"sessionsCount"`
+}
+
+type UpdatePatientRequest struct {
+	Name          string `json:"name"`
+	Age           int    `json:"age"`
+	Condition     string `json:"condition"`
+	LastSeen      string `json:"lastSeen"`
+	SessionsCount int    `json:"sessionsCount"`
+}
+type MessagePayload struct {
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Timestamp string `json:"timestamp"`
 }

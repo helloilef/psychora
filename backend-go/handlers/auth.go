@@ -64,6 +64,7 @@ func (h *Handler) Signup(c *gin.Context) {
 }
 
 func (h *Handler) Login(c *gin.Context) {
+
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -101,4 +102,98 @@ func (h *Handler) Login(c *gin.Context) {
 		AccessToken: token,
 		User:        user,
 	})
+}
+func (h *Handler) GetCurrentUser(c *gin.Context) {
+	userID := c.GetString("userID")
+
+	// Get user data
+	var user models.User
+	err := h.DB.QueryRow(`
+        SELECT id, email, full_name, specialty, hospital, location, phone, years_of_experience, created_at
+        FROM users WHERE id = $1`, userID).
+		Scan(&user.ID, &user.Email, &user.FullName, &user.Specialty,
+			&user.Hospital, &user.Location, &user.Phone, &user.YearsOfExperience, &user.CreatedAt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error fetching user"})
+		return
+	}
+
+	// Get their patients
+	rows, err := h.DB.Query(`
+        SELECT id, name, age, condition, last_seen, sessions_count
+        FROM patients WHERE user_id = $1
+        ORDER BY created_at DESC`, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error fetching patients"})
+		return
+	}
+	defer rows.Close()
+
+	patients := []models.Patient{}
+	for rows.Next() {
+		var p models.Patient
+		if err := rows.Scan(&p.ID, &p.Name, &p.Age, &p.Condition, &p.LastSeen, &p.SessionsCount); err != nil {
+			continue
+		}
+		patients = append(patients, p)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":                  user.ID,
+		"email":               user.Email,
+		"fullName":            user.FullName,
+		"specialty":           user.Specialty,
+		"hospital":            user.Hospital,
+		"location":            user.Location,
+		"phone":               user.Phone,
+		"years_of_experience": user.YearsOfExperience,
+		"created_at":          user.CreatedAt,
+		"patients":            patients,
+		"patients_count":      len(patients),
+	})
+}
+func (h *Handler) UpdateCurrentUser(c *gin.Context) {
+	userID := c.GetString("userID")
+
+	var req struct {
+		FullName          string `json:"fullName"`
+		Email             string `json:"email"`
+		Phone             string `json:"phone"`
+		Location          string `json:"location"`
+		Specialty         string `json:"specialty"`
+		Hospital          string `json:"hospital"`
+		YearsOfExperience int    `json:"yearsOfExperience"`
+		Bio               string `json:"bio"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	var user models.User
+	err := h.DB.QueryRow(`
+        UPDATE users SET
+            full_name = COALESCE(NULLIF($1, ''), full_name),
+            email = COALESCE(NULLIF($2, ''), email),
+            phone = COALESCE(NULLIF($3, ''), phone),
+            location = COALESCE(NULLIF($4, ''), location),
+            specialty = COALESCE(NULLIF($5, ''), specialty),
+            hospital = COALESCE(NULLIF($6, ''), hospital),
+            years_of_experience = CASE WHEN $7 = 0 THEN years_of_experience ELSE $7 END,
+            bio = COALESCE(NULLIF($8, ''), bio)
+        WHERE id = $9
+        RETURNING id, email, full_name, specialty, hospital, location, phone, years_of_experience, bio, created_at`,
+		req.FullName, req.Email, req.Phone, req.Location,
+		req.Specialty, req.Hospital, req.YearsOfExperience, req.Bio, userID,
+	).Scan(&user.ID, &user.Email, &user.FullName, &user.Specialty,
+		&user.Hospital, &user.Location, &user.Phone, &user.YearsOfExperience,
+		&user.Bio, &user.CreatedAt)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error updating profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
 }
