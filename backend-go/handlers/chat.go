@@ -6,8 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
-	"backend/models"
 )
 
 // GET /api/psy/conversations/:patientId
@@ -45,41 +43,33 @@ func (h *Handler) LoadConversation(c *gin.Context) {
 }
 
 // POST /api/psy/conversations
+// POST /api/psy/conversations/message  ← append a single message
 func (h *Handler) SaveConversation(c *gin.Context) {
 	userID := c.GetString("userID")
 
 	var req struct {
-		PatientID string                  `json:"patientId" binding:"required"`
-		Messages  []models.MessagePayload `json:"messages" binding:"required"`
+		PatientID string `json:"patientId" binding:"required"`
+		Role      string `json:"role" binding:"required"`
+		Content   string `json:"content" binding:"required"`
+		Timestamp string `json:"timestamp"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	// Delete existing messages for this patient+user, then re-insert
 	_, err := h.DB.Exec(`
-        DELETE FROM messages WHERE patient_id = $1 AND user_id = $2`,
-		req.PatientID, userID,
+        INSERT INTO messages (id, patient_id, user_id, role, content, timestamp, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		uuid.New().String(), req.PatientID, userID,
+		req.Role, req.Content, req.Timestamp, time.Now(),
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error clearing old messages"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving message"})
 		return
 	}
 
-	for _, msg := range req.Messages {
-		_, err := h.DB.Exec(`
-            INSERT INTO messages (id, patient_id, user_id, role, content, timestamp, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			uuid.New().String(), req.PatientID, userID,
-			msg.Role, msg.Content, msg.Timestamp, time.Now(),
-		)
-		if err != nil {
-			continue
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Conversation saved"})
+	c.JSON(http.StatusOK, gin.H{"message": "Message saved"})
 }
 
 // DELETE /api/psy/conversations/:patientId
