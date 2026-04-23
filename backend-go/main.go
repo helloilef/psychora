@@ -60,18 +60,31 @@ func main() {
 	protected := r.Group("/api/psy")
 	protected.Use(middleware.AuthMiddleware())
 	{
+		// Auth & User
+		protected.GET("/users/me", h.GetCurrentUser)
+		protected.PUT("/users/me", h.UpdateCurrentUser)
+		protected.POST("/logout", h.Logout)
+		// Patients
+		protected.GET("/patients", h.GetPatients)
+		protected.POST("/patients", h.CreatePatient)
+		protected.GET("/patients/:id", h.GetPatient)
+		protected.PUT("/patients/:id", h.UpdatePatient)
+		protected.DELETE("/patients/:id", h.DeletePatient)
+
+		// Notes — MUST be before /patients/:id routes to avoid conflict
+		//protected.GET("/patient-notes", h.GetAllPatientNotes)
+		protected.GET("/patients/notes", h.GetAllPatientNotes)
+		protected.GET("/patients/notes/:patientId", h.GetPatientNotes)
+		protected.PUT("/patients/notes/:patientId", h.SavePatientNote)
+		protected.PUT("/patients/:id/notes", h.SavePatientNote)
+		protected.POST("/patients/notes", h.SavePatientNote)
+		protected.DELETE("/patients/notes/:patientId", h.DeletePatientNote)
+
+		// Conversations
+		protected.POST("/conversations/message", h.SendMessage) // ← FIRST
 		protected.GET("/conversations/:patientId", h.LoadConversation)
 		protected.POST("/conversations", h.SaveConversation)
 		protected.DELETE("/conversations/:patientId", h.ClearConversation)
-		/*protected.POST("/conversations/:id/messages", h.SendMessage)
-		protected.GET("/conversations/:id/messages", h.GetMessages)*/
-		protected.GET("/patients", h.GetPatients)
-		protected.GET("/users/me", h.GetCurrentUser)
-		protected.GET("/patients/:id", h.GetPatient)
-		protected.POST("/patients", h.CreatePatient)
-		protected.PUT("/patients/:id", h.UpdatePatient)
-		protected.DELETE("/patients/:id", h.DeletePatient)
-		protected.PUT("/users/me", h.UpdateCurrentUser)
 	}
 
 	port := os.Getenv("PORT")

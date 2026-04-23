@@ -197,3 +197,6 @@ func (h *Handler) UpdateCurrentUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, user)
 }
+func (h *Handler) Logout(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}

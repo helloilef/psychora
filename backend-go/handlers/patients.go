@@ -169,3 +169,134 @@ func (h *Handler) DeletePatient(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Patient deleted successfully"})
 }
+
+// PUT /api/psy/patients/notes/:patientId
+// PUT /api/psy/patients/:patientId/notes
+// POST /api/psy/patients/notes
+func (h *Handler) SavePatientNote(c *gin.Context) {
+	userID := c.GetString("userID")
+
+	// get patientId from either route param
+	patientID := c.Param("patientId")
+	if patientID == "" {
+		patientID = c.Param("id")
+	}
+
+	var req struct {
+		PatientID string `json:"patientId"`
+		Note      string `json:"note" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// fallback if patientId came from body
+	if patientID == "" {
+		patientID = req.PatientID
+	}
+
+	_, err := h.DB.Exec(`
+        INSERT INTO patient_notes (id, patient_id, user_id, note, created_at)
+        VALUES ($1, $2, $3, $4, NOW())`,
+		uuid.New().String(), patientID, userID, req.Note,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving note"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Note saved"})
+}
+func (h *Handler) GetPatientNotes(c *gin.Context) {
+	userID := c.GetString("userID")
+	patientID := c.Param("patientId")
+
+	rows, err := h.DB.Query(`
+        SELECT id, note, created_at FROM patient_notes
+        WHERE patient_id = $1 AND user_id = $2
+        ORDER BY created_at DESC`,
+		patientID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error fetching notes"})
+		return
+	}
+	defer rows.Close()
+
+	notes := []map[string]interface{}{}
+	for rows.Next() {
+		var id, note, createdAt string
+		rows.Scan(&id, &note, &createdAt)
+		notes = append(notes, map[string]interface{}{
+			"id": id, "note": note, "createdAt": createdAt,
+		})
+	}
+	c.JSON(http.StatusOK, notes)
+}
+func (h *Handler) GetAllPatientNotes(c *gin.Context) {
+	userID := c.GetString("userID")
+	patientID := c.Query("patientId") // /patient-notes?patientId=abc-123
+
+	var rows *sql.Rows
+	var err error
+
+	if patientID != "" {
+		rows, err = h.DB.Query(`
+            SELECT id, patient_id, note, created_at FROM patient_notes
+            WHERE user_id = $1 AND patient_id = $2
+            ORDER BY created_at DESC`,
+			userID, patientID,
+		)
+	} else {
+		// return all notes for all patients
+		rows, err = h.DB.Query(`
+            SELECT id, patient_id, note, created_at FROM patient_notes
+            WHERE user_id = $1
+            ORDER BY created_at DESC`,
+			userID,
+		)
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error fetching notes"})
+		return
+	}
+	defer rows.Close()
+
+	notes := []map[string]interface{}{}
+	for rows.Next() {
+		var id, patID, note, createdAt string
+		rows.Scan(&id, &patID, &note, &createdAt)
+		notes = append(notes, map[string]interface{}{
+			"id":        id,
+			"patientId": patID,
+			"note":      note,
+			"createdAt": createdAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, notes)
+}
+
+func (h *Handler) DeletePatientNote(c *gin.Context) {
+	userID := c.GetString("userID")
+	patientID := c.Param("noteId") // param name in route is :noteId but it's actually patientId
+
+	result, err := h.DB.Exec(`
+        DELETE FROM patient_notes WHERE patient_id = $1 AND user_id = $2`,
+		patientID, userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error deleting note"})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Note not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Note deleted successfully"})
+}
