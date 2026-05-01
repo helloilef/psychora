@@ -15,27 +15,16 @@ type User struct {
 	YearsOfExperience int       `json:"years_of_experience" db:"years_of_experience"`
 	CreatedAt         time.Time `json:"created_at" db:"created_at"`
 	Bio               string    `json:"bio" db:"bio"`
-}
-
-type Conversation struct {
-	ID        string    `json:"id" db:"id"`
-	UserID    string    `json:"user_id" db:"user_id"`
-	PatientID string    `json:"patient_id" db:"patient_id"`
-	Title     string    `json:"title" db:"title"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-}
-
-type CreateConversationRequest struct {
-	PatientID string `json:"patient_id" binding:"required"`
-	Title     string `json:"title"`
+	IsStudent         bool      `json:"is_student" db:"is_student"`
 }
 
 // Request/Response structs
+
 type SignupRequest struct {
 	FullName          string `json:"fullName" binding:"required"`
 	Email             string `json:"email" binding:"required,email"`
 	Password          string `json:"password" binding:"required,min=6"`
-	Role              string `json:"role"`
+	IsStudent         bool   `json:"isStudent"`
 	Specialty         string `json:"specialty"`
 	IdCard            string `json:"idCard"`
 	Hospital          string `json:"hospital"`
@@ -45,7 +34,7 @@ type SignupRequest struct {
 }
 
 type AuthResponse struct {
-	AccessToken string `json:"accessToken"` // must be "accessToken" not "token"
+	AccessToken string `json:"accessToken"`
 	User        User   `json:"user"`
 }
 
@@ -53,8 +42,6 @@ type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 }
-
-// Add this to models/models.go
 
 type Patient struct {
 	ID            string    `json:"id" db:"id"`
@@ -82,8 +69,20 @@ type UpdatePatientRequest struct {
 	LastSeen      string `json:"lastSeen"`
 	SessionsCount int    `json:"sessionsCount"`
 }
+
 type MessagePayload struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	Timestamp string `json:"timestamp"`
+}
+
+// StudentMessage represents a general chat message for a student user
+// (no patient association — stored in student_messages table)
+type StudentMessage struct {
+	ID        string    `json:"id" db:"id"`
+	UserID    string    `json:"user_id" db:"user_id"`
+	Role      string    `json:"role" db:"role"`
+	Content   string    `json:"content" db:"content"`
+	Timestamp string    `json:"timestamp" db:"timestamp"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }

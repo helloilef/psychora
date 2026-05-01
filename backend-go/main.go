@@ -14,12 +14,10 @@ import (
 )
 
 func main() {
-	// Load .env
 	if err := godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Connect to Supabase
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal("Error connecting to database:", err)
@@ -31,13 +29,11 @@ func main() {
 	}
 	log.Println("✅ Connected to database")
 
-	// Setup handlers
 	h := handlers.NewHandler(db)
 
-	// Setup router
 	r := gin.Default()
 
-	// CORS — needed for Flutter
+	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -64,27 +60,32 @@ func main() {
 		protected.GET("/users/me", h.GetCurrentUser)
 		protected.PUT("/users/me", h.UpdateCurrentUser)
 		protected.POST("/logout", h.Logout)
-		// Patients
+
+		// Patients (doctors only)
 		protected.GET("/patients", h.GetPatients)
 		protected.POST("/patients", h.CreatePatient)
 		protected.GET("/patients/:id", h.GetPatient)
 		protected.PUT("/patients/:id", h.UpdatePatient)
 		protected.DELETE("/patients/:id", h.DeletePatient)
 
-		// Notes — MUST be before /patients/:id routes to avoid conflict
-		//protected.GET("/patient-notes", h.GetAllPatientNotes)
+		// Notes — specific routes MUST be registered before /patients/:id to avoid conflicts
 		protected.GET("/patients/notes", h.GetAllPatientNotes)
 		protected.GET("/patients/notes/:patientId", h.GetPatientNotes)
+		protected.POST("/patients/notes", h.SavePatientNote)
 		protected.PUT("/patients/notes/:patientId", h.SavePatientNote)
 		protected.PUT("/patients/:id/notes", h.SavePatientNote)
-		protected.POST("/patients/notes", h.SavePatientNote)
-		protected.DELETE("/patients/notes/:patientId", h.DeletePatientNote)
+		protected.DELETE("/patients/notes/:noteId", h.DeletePatientNote)
 
-		// Conversations
-		protected.POST("/conversations/message", h.SendMessage) // ← FIRST
+		// Doctor conversations (tied to a patient)
+		protected.POST("/conversations/message", h.SendMessage) // MUST be before /:patientId
 		protected.GET("/conversations/:patientId", h.LoadConversation)
 		protected.POST("/conversations", h.SaveConversation)
 		protected.DELETE("/conversations/:patientId", h.ClearConversation)
+
+		// Student general chat (no patient — uses student_messages table)
+		protected.POST("/student/message", h.SendStudentMessage)
+		protected.GET("/student/messages", h.LoadStudentConversation)
+		protected.DELETE("/student/messages", h.ClearStudentConversation)
 	}
 
 	port := os.Getenv("PORT")

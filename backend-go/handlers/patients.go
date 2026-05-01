@@ -104,7 +104,6 @@ func (h *Handler) UpdatePatient(c *gin.Context) {
 	userID := c.GetString("userID")
 	patientID := c.Param("id")
 
-	// Check ownership
 	var ownerID string
 	err := h.DB.QueryRow(`SELECT user_id FROM patients WHERE id = $1`, patientID).Scan(&ownerID)
 	if err == sql.ErrNoRows {
@@ -170,13 +169,10 @@ func (h *Handler) DeletePatient(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Patient deleted successfully"})
 }
 
-// PUT /api/psy/patients/notes/:patientId
-// PUT /api/psy/patients/:patientId/notes
-// POST /api/psy/patients/notes
+// POST /api/psy/patients/notes  or  PUT /api/psy/patients/notes/:patientId  or  PUT /api/psy/patients/:id/notes
 func (h *Handler) SavePatientNote(c *gin.Context) {
 	userID := c.GetString("userID")
 
-	// get patientId from either route param
 	patientID := c.Param("patientId")
 	if patientID == "" {
 		patientID = c.Param("id")
@@ -191,15 +187,26 @@ func (h *Handler) SavePatientNote(c *gin.Context) {
 		return
 	}
 
-	// fallback if patientId came from body
 	if patientID == "" {
 		patientID = req.PatientID
 	}
 
-	_, err := h.DB.Exec(`
-        INSERT INTO patient_notes (id, patient_id, user_id, note, created_at)
-        VALUES ($1, $2, $3, $4, NOW())`,
-		uuid.New().String(), patientID, userID, req.Note,
+	// Auth: verify this patient belongs to the requesting doctor
+	var ownerID string
+	err := h.DB.QueryRow(`SELECT user_id FROM patients WHERE id = $1`, patientID).Scan(&ownerID)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Patient not found"})
+		return
+	}
+	if err != nil || ownerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"message": "Access denied"})
+		return
+	}
+
+	_, err = h.DB.Exec(`
+        INSERT INTO patient_notes (id, patient_id, note, created_at)
+        VALUES ($1, $2, $3, NOW())`,
+		uuid.New().String(), patientID, req.Note,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving note"})
@@ -208,14 +215,19 @@ func (h *Handler) SavePatientNote(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Note saved"})
 }
+
+// GET /api/psy/patients/notes/:patientId
 func (h *Handler) GetPatientNotes(c *gin.Context) {
 	userID := c.GetString("userID")
 	patientID := c.Param("patientId")
 
+	// Auth via JOIN — only return notes for patients this doctor owns
 	rows, err := h.DB.Query(`
-        SELECT id, note, created_at FROM patient_notes
-        WHERE patient_id = $1 AND user_id = $2
-        ORDER BY created_at DESC`,
+        SELECT pn.id, pn.note, pn.created_at
+        FROM patient_notes pn
+        JOIN patients p ON p.id = pn.patient_id
+        WHERE pn.patient_id = $1 AND p.user_id = $2
+        ORDER BY pn.created_at DESC`,
 		patientID, userID,
 	)
 	if err != nil {
@@ -234,26 +246,31 @@ func (h *Handler) GetPatientNotes(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, notes)
 }
+
+// GET /api/psy/patients/notes  (optionally ?patientId=...)
 func (h *Handler) GetAllPatientNotes(c *gin.Context) {
 	userID := c.GetString("userID")
-	patientID := c.Query("patientId") // /patient-notes?patientId=abc-123
+	patientID := c.Query("patientId")
 
 	var rows *sql.Rows
 	var err error
 
 	if patientID != "" {
 		rows, err = h.DB.Query(`
-            SELECT id, patient_id, note, created_at FROM patient_notes
-            WHERE user_id = $1 AND patient_id = $2
-            ORDER BY created_at DESC`,
+            SELECT pn.id, pn.patient_id, pn.note, pn.created_at
+            FROM patient_notes pn
+            JOIN patients p ON p.id = pn.patient_id
+            WHERE p.user_id = $1 AND pn.patient_id = $2
+            ORDER BY pn.created_at DESC`,
 			userID, patientID,
 		)
 	} else {
-		// return all notes for all patients
 		rows, err = h.DB.Query(`
-            SELECT id, patient_id, note, created_at FROM patient_notes
-            WHERE user_id = $1
-            ORDER BY created_at DESC`,
+            SELECT pn.id, pn.patient_id, pn.note, pn.created_at
+            FROM patient_notes pn
+            JOIN patients p ON p.id = pn.patient_id
+            WHERE p.user_id = $1
+            ORDER BY pn.created_at DESC`,
 			userID,
 		)
 	}
@@ -279,13 +296,20 @@ func (h *Handler) GetAllPatientNotes(c *gin.Context) {
 	c.JSON(http.StatusOK, notes)
 }
 
+// DELETE /api/psy/patients/notes/:noteId
 func (h *Handler) DeletePatientNote(c *gin.Context) {
 	userID := c.GetString("userID")
-	patientID := c.Param("noteId") // param name in route is :noteId but it's actually patientId
+	noteID := c.Param("noteId")
 
+	// Auth via JOIN — only delete if the note's patient belongs to this doctor
 	result, err := h.DB.Exec(`
-        DELETE FROM patient_notes WHERE patient_id = $1 AND user_id = $2`,
-		patientID, userID,
+        DELETE FROM patient_notes
+        WHERE id = $1
+          AND EXISTS (
+              SELECT 1 FROM patients p
+              WHERE p.id = patient_notes.patient_id AND p.user_id = $2
+          )`,
+		noteID, userID,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error deleting note"})

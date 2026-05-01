@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -12,15 +10,20 @@ func (h *Handler) LoadConversation(c *gin.Context) {
 	userID := c.GetString("userID")
 	patientID := c.Param("patientId")
 
+	// Auth: verify the patient belongs to this doctor via patients table
 	rows, err := h.DB.Query(`
         SELECT role, content, timestamp
         FROM messages
-        WHERE patient_id = $1 AND user_id = $2
+        WHERE patient_id = $1
+          AND EXISTS (
+              SELECT 1 FROM patients p
+              WHERE p.id = $1 AND p.user_id = $2
+          )
         ORDER BY created_at ASC`,
 		patientID, userID,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error fetching messages"})
+		c.JSON(500, gin.H{"message": "Error fetching messages"})
 		return
 	}
 	defer rows.Close()
@@ -38,11 +41,10 @@ func (h *Handler) LoadConversation(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, messages)
+	c.JSON(200, messages)
 }
 
 // POST /api/psy/conversations
-// POST /api/psy/conversations/message  ← append a single message
 func (h *Handler) SaveConversation(c *gin.Context) {
 	userID := c.GetString("userID")
 
@@ -51,38 +53,41 @@ func (h *Handler) SaveConversation(c *gin.Context) {
 		Messages  []map[string]interface{} `json:"messages" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(400, gin.H{"message": err.Error()})
 		return
 	}
 
-	// Delete existing messages first
-	_, err := h.DB.Exec(`
-        DELETE FROM messages WHERE patient_id = $1 AND user_id = $2`,
-		req.PatientID, userID,
-	)
+	// Auth: verify ownership before touching any data
+	var ownerID string
+	err := h.DB.QueryRow(`SELECT user_id FROM patients WHERE id = $1`, req.PatientID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		c.JSON(403, gin.H{"message": "Access denied"})
+		return
+	}
+
+	_, err = h.DB.Exec(`DELETE FROM messages WHERE patient_id = $1`, req.PatientID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error clearing old messages"})
+		c.JSON(500, gin.H{"message": "Error clearing old messages"})
 		return
 	}
 
-	// Re-insert the full history
 	for _, msg := range req.Messages {
 		role, _ := msg["role"].(string)
 		content, _ := msg["content"].(string)
 		timestamp, _ := msg["timestamp"].(string)
 
 		_, err := h.DB.Exec(`
-            INSERT INTO messages (id, patient_id, user_id, role, content, timestamp, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-			uuid.New().String(), req.PatientID, userID, role, content, timestamp,
+            INSERT INTO messages (id, patient_id, role, content, timestamp, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())`,
+			uuid.New().String(), req.PatientID, role, content, timestamp,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving messages"})
+			c.JSON(500, gin.H{"message": "Error saving messages"})
 			return
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Conversation saved"})
+	c.JSON(200, gin.H{"message": "Conversation saved"})
 }
 
 // DELETE /api/psy/conversations/:patientId
@@ -90,16 +95,21 @@ func (h *Handler) ClearConversation(c *gin.Context) {
 	userID := c.GetString("userID")
 	patientID := c.Param("patientId")
 
-	_, err := h.DB.Exec(`
-        DELETE FROM messages WHERE patient_id = $1 AND user_id = $2`,
-		patientID, userID,
-	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error clearing conversation"})
+	// Auth: verify ownership
+	var ownerID string
+	err := h.DB.QueryRow(`SELECT user_id FROM patients WHERE id = $1`, patientID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		c.JSON(403, gin.H{"message": "Access denied"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Conversation cleared"})
+	_, err = h.DB.Exec(`DELETE FROM messages WHERE patient_id = $1`, patientID)
+	if err != nil {
+		c.JSON(500, gin.H{"message": "Error clearing conversation"})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "Conversation cleared"})
 }
 
 // POST /api/psy/conversations/message
@@ -112,40 +122,46 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		History   []map[string]interface{} `json:"history"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(400, gin.H{"message": err.Error()})
 		return
 	}
 
-	// Save user message to DB
-	_, err := h.DB.Exec(`
-        INSERT INTO messages (id, patient_id, user_id, role, content, timestamp, created_at)
-        VALUES ($1, $2, $3, 'user', $4, NOW()::text, NOW())`,
-		uuid.New().String(), req.PatientID, userID, req.Message,
+	// Auth: verify the patient belongs to this doctor
+	var ownerID string
+	err := h.DB.QueryRow(`SELECT user_id FROM patients WHERE id = $1`, req.PatientID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		c.JSON(403, gin.H{"message": "Access denied"})
+		return
+	}
+
+	// Save user message
+	_, err = h.DB.Exec(`
+        INSERT INTO messages (id, patient_id, role, content, timestamp, created_at)
+        VALUES ($1, $2, 'user', $3, NOW()::text, NOW())`,
+		uuid.New().String(), req.PatientID, req.Message,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving user message"})
+		c.JSON(500, gin.H{"message": "Error saving user message"})
 		return
 	}
 
 	// Call Python AI
 	aiReply, err := callPythonAI(req.Message, req.PatientID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "AI service error: " + err.Error()})
+		c.JSON(500, gin.H{"message": "AI service error: " + err.Error()})
 		return
 	}
 
-	// Save AI response to DB
+	// Save AI response
 	_, err = h.DB.Exec(`
-        INSERT INTO messages (id, patient_id, user_id, role, content, timestamp, created_at)
-        VALUES ($1, $2, $3, 'assistant', $4, NOW()::text, NOW())`,
-		uuid.New().String(), req.PatientID, userID, aiReply,
+        INSERT INTO messages (id, patient_id, role, content, timestamp, created_at)
+        VALUES ($1, $2, 'assistant', $3, NOW()::text, NOW())`,
+		uuid.New().String(), req.PatientID, aiReply,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error saving AI response"})
+		c.JSON(500, gin.H{"message": "Error saving AI response"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"response": aiReply,
-	})
+	c.JSON(200, gin.H{"response": aiReply})
 }
