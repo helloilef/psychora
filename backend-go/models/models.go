@@ -18,12 +18,11 @@ type User struct {
 	IsStudent         bool      `json:"is_student" db:"is_student"`
 }
 
-// Request/Response structs
-
 type SignupRequest struct {
 	FullName          string `json:"fullName" binding:"required"`
 	Email             string `json:"email" binding:"required,email"`
 	Password          string `json:"password" binding:"required,min=6"`
+	Role              string `json:"role"`
 	IsStudent         bool   `json:"isStudent"`
 	Specialty         string `json:"specialty"`
 	IdCard            string `json:"idCard"`
@@ -31,6 +30,16 @@ type SignupRequest struct {
 	Location          string `json:"location"`
 	Phone             string `json:"phone"`
 	YearsOfExperience int    `json:"yearsOfExperience"`
+	University        string `json:"university"`
+	Degree            string `json:"degree"`
+	Year              string `json:"year"`
+}
+
+func (r *SignupRequest) IsStudentAccount() bool {
+	if r.Role == "Student" || r.Role == "student" {
+		return true
+	}
+	return r.IsStudent
 }
 
 type AuthResponse struct {
@@ -76,8 +85,6 @@ type MessagePayload struct {
 	Timestamp string `json:"timestamp"`
 }
 
-// StudentMessage represents a general chat message for a student user
-// (no patient association — stored in student_messages table)
 type StudentMessage struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`

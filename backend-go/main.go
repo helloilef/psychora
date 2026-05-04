@@ -33,7 +33,6 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -45,44 +44,41 @@ func main() {
 		c.Next()
 	})
 
-	// Public routes
 	api := r.Group("/api/psy")
 	{
 		api.POST("/signup", h.Signup)
 		api.POST("/login", h.Login)
 	}
 
-	// Protected routes
 	protected := r.Group("/api/psy")
 	protected.Use(middleware.AuthMiddleware())
 	{
-		// Auth & User
 		protected.GET("/users/me", h.GetCurrentUser)
 		protected.PUT("/users/me", h.UpdateCurrentUser)
 		protected.POST("/logout", h.Logout)
 
-		// Patients (doctors only)
+		// Notes AVANT /patients/:id pour éviter le conflit
+		protected.GET("/patients/notes", h.GetAllPatientNotes)
+		protected.GET("/patients/notes/:patientId", h.GetPatientNotes)
+		protected.POST("/patients/notes", h.SavePatientNote)
+		protected.PUT("/patients/notes/:patientId", h.SavePatientNote)
+		protected.DELETE("/patients/notes/:noteId", h.DeletePatientNote)
+
+		// Patients
 		protected.GET("/patients", h.GetPatients)
 		protected.POST("/patients", h.CreatePatient)
 		protected.GET("/patients/:id", h.GetPatient)
 		protected.PUT("/patients/:id", h.UpdatePatient)
 		protected.DELETE("/patients/:id", h.DeletePatient)
-
-		// Notes — specific routes MUST be registered before /patients/:id to avoid conflicts
-		protected.GET("/patients/notes", h.GetAllPatientNotes)
-		protected.GET("/patients/notes/:patientId", h.GetPatientNotes)
-		protected.POST("/patients/notes", h.SavePatientNote)
-		protected.PUT("/patients/notes/:patientId", h.SavePatientNote)
 		protected.PUT("/patients/:id/notes", h.SavePatientNote)
-		protected.DELETE("/patients/notes/:noteId", h.DeletePatientNote)
 
-		// Doctor conversations (tied to a patient)
-		protected.POST("/conversations/message", h.SendMessage) // MUST be before /:patientId
+		// Conversations docteur — /message AVANT /:patientId
+		protected.POST("/conversations/message", h.SendMessage)
 		protected.GET("/conversations/:patientId", h.LoadConversation)
 		protected.POST("/conversations", h.SaveConversation)
 		protected.DELETE("/conversations/:patientId", h.ClearConversation)
 
-		// Student general chat (no patient — uses student_messages table)
+		// Chat étudiant
 		protected.POST("/student/message", h.SendStudentMessage)
 		protected.GET("/student/messages", h.LoadStudentConversation)
 		protected.DELETE("/student/messages", h.ClearStudentConversation)

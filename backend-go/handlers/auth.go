@@ -44,20 +44,30 @@ func (h *Handler) Signup(c *gin.Context) {
 		return
 	}
 
+	isStudent := req.IsStudentAccount()
+
 	id := uuid.New().String()
 	_, err = h.DB.Exec(`
 		INSERT INTO users (id, email, password_hash, full_name, specialty, id_card, hospital, location, phone, years_of_experience, is_student)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		id, req.Email, string(hash), req.FullName,
 		req.Specialty, req.IdCard, req.Hospital,
-		req.Location, req.Phone, req.YearsOfExperience, req.IsStudent,
+		req.Location, req.Phone, req.YearsOfExperience, isStudent,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Error creating account"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "Account created successfully"})
+	role := "doctor"
+	if isStudent {
+		role = "student"
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Account created successfully",
+		"role":    role,
+	})
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -91,9 +101,20 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, models.AuthResponse{
-		AccessToken: token,
-		User:        user,
+	role := "doctor"
+	if user.IsStudent {
+		role = "student"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"accessToken": token,
+		"role":        role,
+		"user": gin.H{
+			"id":         user.ID,
+			"email":      user.Email,
+			"fullName":   user.FullName,
+			"is_student": user.IsStudent,
+		},
 	})
 }
 
@@ -112,7 +133,6 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	// Students don't have patients — return early with just user data
 	if user.IsStudent {
 		c.JSON(http.StatusOK, gin.H{
 			"id":         user.ID,
@@ -121,6 +141,7 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 			"location":   user.Location,
 			"phone":      user.Phone,
 			"bio":        user.Bio,
+			"role":       "student",
 			"is_student": true,
 			"created_at": user.CreatedAt,
 		})
@@ -156,6 +177,7 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 		"phone":               user.Phone,
 		"years_of_experience": user.YearsOfExperience,
 		"bio":                 user.Bio,
+		"role":                "doctor",
 		"is_student":          false,
 		"created_at":          user.CreatedAt,
 		"patients":            patients,
